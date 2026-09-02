@@ -15,7 +15,7 @@ Retailers and product-catalog teams need visibility into how their product data 
 - Open Food Facts — selected: no signup friction, real incremental field (last_modified_t)
 
 ## 4. Architecture
-\`\`\`mermaid
+```mermaid
 flowchart LR
     A[Open Food Facts API] -->|fetch new/changed products| B[Ingestion Script]
     B -->|raw JSON| C[S3: raw zone<br/>partitioned by ingest_date]
@@ -24,7 +24,7 @@ flowchart LR
     E --> F[Future: Redshift/Athena<br/>warehouse]
     F --> G[Future: dbt models]
     G --> H[Future: Dashboard]
-\`\`\`
+```
 
 ## 5. Incremental Strategy
 - Watermark on `last_modified_t`, stored as JSON in S3 (s3://bucket/state/watermark.json)
