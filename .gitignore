@@ -11,3 +11,6 @@ wheels/
 
 # API Keys
 .env
+
+# macOS Finder metadata
+.DS_Store

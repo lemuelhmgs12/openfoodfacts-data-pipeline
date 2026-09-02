@@ -9,4 +9,5 @@ dependencies = [
     "pandas>=3.0.5",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
+    "tenacity>=9.1.4",
 ]
