@@ -1,7 +1,7 @@
 import requests
 
 
-url = "https://world.openfoodfacts.org/cgi/search.pl"
+url = "https://world.openfoodfacts.org/api/v2/search"
 
 headers = {
     "User-Agent": "DataEngPortfolioProject/1.0 (contact: your_email@example.com)"

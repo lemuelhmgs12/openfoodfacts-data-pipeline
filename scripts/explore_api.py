@@ -1,3 +1,6 @@
+"""
+Smoke test for openffod api
+"""
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -5,14 +8,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 
 url = "https://world.openfoodfacts.org/cgi/search.pl"
-params = {
-    "search_terms": "snacks",
-    "search_simple": 1,
-    "action": "process",
-    "json": 1,
-    "page_size": 3,
-    "sort_by": "last_modified_t",
-}
+
 headers = {
     "User-Agent": "DataEngPortfolioProject/1.0 (contact: lemuelhmgs@yahoo.com)"
 }
