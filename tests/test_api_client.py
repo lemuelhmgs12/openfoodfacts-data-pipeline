@@ -62,3 +62,64 @@ def test_success_returns_parsed_data(client):
     result = client._fetch_page(1)
 
     assert result == fake_product_data
+
+def test_happy_path_walk_two_pages_stop_on_third_empty(client, mocker):
+    mock_fetch = mocker.patch.object(client, "_fetch_page", side_effect=[
+    {
+        "count": 2,
+        "products": [
+            {"code": "111", "product_name": "Fake Chips", "last_modified_t": 500},
+            {"code": "222", "product_name": "Fake Cookies", "last_modified_t": 400},
+        ],
+    },
+    {
+        "count": 1,
+        "products": [
+            {"code": "333", "product_name": "Fake Crackers", "last_modified_t": 300},
+        ],
+    },
+    {
+        "count": 0,
+        "products": [],
+    },
+    ])
+    result = list(client.iter_products())
+
+    assert len(result) == 3
+
+    assert [p['code'] for p in result] == ['111','222','333']
+
+    assert mock_fetch.call_count == 3
+
+
+def test_iter_products_stops_at_watermark(client, mocker):
+    mock_fetch = mocker.patch.object(client, "_fetch_page", side_effect=[
+    {
+        "count": 2,
+        "products": [
+            {"code": "111", "product_name": "Fake A", "last_modified_t": 500},
+            {"code": "222", "product_name": "Fake B", "last_modified_t": 400},
+        ],
+    },
+    {
+        "count": 2,
+        "products": [
+            {"code": "333", "product_name": "Fake C", "last_modified_t": 300},
+            {"code": "444", "product_name": "Fake D", "last_modified_t": 200},  
+        ],
+    },
+    {
+        "count": 1,
+        "products": [
+            {"code": "555", "product_name": "Fake E", "last_modified_t": 100},  
+        ],
+    },
+    ])
+
+    result = list(client.iter_products(250))
+
+    assert len(result) == 3
+
+    assert [p['code'] for p in result] == ['111','222','333']
+
+    assert mock_fetch.call_count == 2
