@@ -5,15 +5,6 @@ from pipeline.api_client import OpenFoodFactsClient,TransientAPIError,OpenFoodFa
 
 URL = f"{Settings.base_url}/api/v2/search"
 
-@pytest.fixture
-def settings():
-    return Settings(
-        max_retry_attempts=3,
-        backoff_multiplier= 1,
-        backoff_min_seconds = 1,
-        backoff_max_seconds = 2,
-
-    )
 
 @pytest.fixture
 def client(settings):
