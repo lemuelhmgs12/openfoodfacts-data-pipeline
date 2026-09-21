@@ -38,7 +38,7 @@ class OpenFoodFactsClient:
             raise TransientAPIError (f"request failed on page {page}: {exc}") from exc
 
         if(500 <= response.status_code < 600):
-            logger.error(f"{response.status_code} thrown by API. Retring....")
+            logger.error(f"{response.status_code} thrown by API. Retring....page: {page}")
             raise TransientAPIError(f"{response.status_code}")
         elif(400 <= response.status_code < 500):
             logger.error(f"{response.status_code} thrown by API.")
