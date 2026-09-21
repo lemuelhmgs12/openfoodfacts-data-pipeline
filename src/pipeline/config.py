@@ -16,6 +16,7 @@ class Settings:
     raw_prefix: str="raw/openfoodfacts"
     watermark_key: str="state/watermark.json"
     s3_bucket: str = os.environ.get("S3_BUCKET")
+    batch_size: int = 500
     fields: tuple[str, ...]=("code","product_name", "last_modified_t")
     timeout: int = 10
     backoff_multiplier: int = 2

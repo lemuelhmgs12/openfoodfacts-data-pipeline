@@ -11,6 +11,7 @@ def settings():
         backoff_min_seconds=1,
         backoff_max_seconds=2,
         s3_bucket="test-bucket",
+        batch_size=2,
     )
 
 @pytest.fixture
@@ -22,6 +23,15 @@ def fake_products():
     return [
         {"code": "111", "product_name": "Fake Chips", "last_modified_t": 500},
         {"code": "222", "product_name": "Fake Cookies", "last_modified_t": 400},
+    ]
+
+@pytest.fixture
+def fake_products_four():
+    return [
+        {"code": "111", "product_name": "Fake Chips", "last_modified_t": 500},
+        {"code": "222", "product_name": "Fake Cookies", "last_modified_t": 400},
+        {"code": "333", "product_name": "Fake Crackers", "last_modified_t": 300},
+        {"code": "444", "product_name": "Fake Popcorn", "last_modified_t": 200},
     ]
 
 class FakeBody:
