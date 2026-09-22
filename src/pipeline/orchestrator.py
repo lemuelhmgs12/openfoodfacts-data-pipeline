@@ -34,8 +34,10 @@ def run(settings, s3_client=None):
 
         if batch:
             write_batch(settings, batch, date.today(), batch_count, run_time, s3_client=s3_client)
+            batch_count += 1
 
         write_watermark(settings, max_seen, s3_client=s3_client)
+        logger.info(f"Run complete:  {batch_count} batches written, watermark now {max_seen}")
 
     except OpenFoodFactsError as exc:
         logger.error(f"Api error during pipeline run: {exc}")

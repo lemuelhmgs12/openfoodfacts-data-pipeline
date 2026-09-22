@@ -11,7 +11,9 @@ def read_watermark(settings, s3_client=None):
     try:
         obj = s3.get_object(Bucket=settings.s3_bucket, Key = settings.watermark_key)
         body =json.loads(obj["Body"].read())
+        logger.info(f"Current watermark: {body["last_modified_t"]}")
         return body["last_modified_t"]
+
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "NoSuchKey":
             logger.info("No prior watermark found.")
@@ -23,7 +25,7 @@ def read_watermark(settings, s3_client=None):
 
 def write_watermark(settings, value, s3_client=None):
     s3 = s3_client if s3_client is not None else boto3.client("s3")
-    
+
     data = {"last_modified_t" : value}
     body = json.dumps(data).encode("utf-8")
 

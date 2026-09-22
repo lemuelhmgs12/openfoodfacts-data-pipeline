@@ -68,6 +68,7 @@ class OpenFoodFactsClient:
         while page <= self.settings.max_page_per_run and not is_done :
             data = self._fetch_page(page)
             products = data['products']
+            logger.info(f"page {page}: got {len(products)} products")
 
             if products == []:
                 is_done = True

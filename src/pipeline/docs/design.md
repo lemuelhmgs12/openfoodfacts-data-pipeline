@@ -51,6 +51,11 @@ s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_NNN.json
 - Monitoring/alerting approach
 - Alerting mechanism for failed runs (SNS? Slack webhook?) — decision
   made in section 7, implementation still pending
+- Investigate the 401 observed mid-retry: reproduce under rapid manual
+  requests (curl/Postman in quick succession) to test whether it's
+  rate-limiting-related; consider whether 401 should be added to the
+  retryable set if confirmed
+
 
 ## 9. Findings Log
 - **Endpoint choice**: switched from `/cgi/search.pl` to `/api/v2/search`.
@@ -64,3 +69,40 @@ s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_NNN.json
   `verify_sort_order.py`). This is what makes early-stop pagination for
   the incremental strategy (section 5) valid — without it, we'd have to
   page through the entire catalog on every run.
+
+- **Real page size cap discovered**: `page_size` was set to 1000 in
+  Settings, but the API silently caps actual results at 100 products
+  per page regardless of what's requested — confirmed via a diagnostic
+  log counting products per page in production. This meant batches
+  (batch_size=500) rarely triggered, since 5 consecutive successful
+  pages were needed before a single write, against a ~60% per-page
+  failure rate. Fixed by aligning page_size to the real ceiling (100)
+  and lowering batch_size to 300, so a batch completes within 3 pages
+  instead of 5.
+
+- **Same-day run collision found in manual testing**: batch filenames were
+  built from ingest_date + a per-run batch counter starting at 0, with
+  no identifier distinguishing separate runs on the same day. Running
+  the pipeline multiple times in one day caused later runs to silently
+  overwrite earlier runs' batch_000.json, batch_001.json, etc. — found
+  by manually inspecting S3 and noticing files being replaced rather
+  than accumulating. Fixed by generating one timestamp per run() call
+  (HH-MM-SS) and adding it into the filename
+  (batch_{run_time}_{count}.json).
+
+- **Live 401 observed mid-retry (open question)**: during a run with
+  many consecutive 503s, one retry attempt returned 401 Unauthorized
+  instead. OFF's docs state no auth is required for this endpoint, and
+  no credentials are ever sent. Currently
+  handled correctly as a non-retryable OpenFoodFactsError (any 4xx),
+  which is the right behavior regardless of root cause.
+
+- **End-to-end validation against live data**: confirmed, via multiple
+  real runs against production OpenFoodFacts + a real S3 bucket, that
+  (1) a full successful run correctly writes all batches and only then
+  advances the watermark, (2) a run that crashes partway through
+  correctly leaves the watermark untouched. Verified directly in S3,
+  not just in tests, (3) a subsequent run against an already-current
+  watermark correctly early-stops after a single page, confirming the
+  incremental strategy's efficiency payoff in practice, not just in
+  design.
