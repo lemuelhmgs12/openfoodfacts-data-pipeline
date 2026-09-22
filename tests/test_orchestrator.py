@@ -1,8 +1,10 @@
 import json,pytest
 from pipeline.api_client import OpenFoodFactsClient, TransientAPIError
 from pipeline.orchestrator import run
-from datetime import date
+from datetime import date, datetime
 from botocore.exceptions import ClientError
+
+
 
 def test_run_happy_path(fake_s3, fake_products_four, settings, mocker):
     mocker.patch.object(OpenFoodFactsClient, "iter_products", return_value=fake_products_four)
@@ -23,6 +25,8 @@ def test_leftover_partial_batch_processed(fake_s3, settings, mocker):
         {"code": "333", "product_name": "Fake Crackers", "last_modified_t": 300},
     ]
 
+    run_time = datetime.now().strftime("%H-%M-%S")
+
     mocker.patch.object(OpenFoodFactsClient,"iter_products", return_value= fake_product)
 
     run(settings, s3_client=fake_s3)
@@ -32,7 +36,7 @@ def test_leftover_partial_batch_processed(fake_s3, settings, mocker):
     data = json.loads(fake_s3.storage[settings.watermark_key])
     assert data["last_modified_t"] == 500
 
-    leftover_key = f"{settings.raw_prefix}/ingest_date={date.today().isoformat()}/batch_001.json"
+    leftover_key = f"{settings.raw_prefix}/ingest_date={date.today().isoformat()}/batch_{run_time}_001.json"
     leftover_batch = json.loads(fake_s3.storage[leftover_key])
 
     assert leftover_batch == [{"code": "333", "product_name": "Fake Crackers", "last_modified_t": 300}]
