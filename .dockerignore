@@ -1,0 +1,16 @@
+# Never let a secret file accidentally get baked into an image layer
+.env
+
+# Local dev artifacts 
+.venv
+__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+
+# Not needed at runtime
+tests/
+scripts/
+docs/
+*.md
+!README.md
