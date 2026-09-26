@@ -20,11 +20,21 @@ flowchart LR
     A[Open Food Facts API] -->|fetch new/changed products| B[Ingestion Script]
     B -->|raw JSON| C[S3: raw zone<br/>partitioned by ingest_date]
     B -->|read/update| D[S3: watermark.json<br/>last_modified_t]
-    C --> E[Future: Glue/Spark<br/>transform layer]
-    E --> F[Future: Redshift/Athena<br/>warehouse]
-    F --> G[Future: dbt models]
-    G --> H[Future: Dashboard]
+    C --> E[DuckDB: queries S3 directly<br/>no separate warehouse service]
+    E --> F[Staging: dedupe_products.sql<br/>one row per product]
+    F --> G[Marts: rollups, e.g.<br/>products_by_ingest_date.sql]
+    G --> H[Future: formalize as dbt models]
+    H --> I[Future: Dashboard]
 ```
+
+**Note on this diagram's evolution**: originally planned as
+Glue/Spark → Redshift/Athena → dbt, matching a typical enterprise
+stack. In practice, DuckDB querying S3 directly replaced the separate
+transform-layer + warehouse-service split entirely -- no Spark cluster
+or managed warehouse needed at this data volume, and DuckDB's native
+S3 support meant no ETL step to load data into a warehouse before
+querying it. dbt remains a real future step, but would run directly
+against DuckDB rather than against Redshift/Athena.
 
 ## 5. Incremental Strategy
 - Watermark on `last_modified_t`, stored as JSON in S3 (s3://bucket/state/watermark.json)
