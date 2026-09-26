@@ -14,3 +14,7 @@ df = run_query(conn, f"dedupe_products.sql", s3_path)
 
 print(df.shape)
 print(df.head())
+
+ingest_date_rollup = run_query(conn, f"products_by_ingest_date.sql", s3_path)
+
+print (ingest_date_rollup.head())

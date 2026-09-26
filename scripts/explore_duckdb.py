@@ -29,4 +29,11 @@ with ranked as (select code, last_modified_t, product_name, ecoscore_tags, inges
 
 print(unique_data)
 
+ecoscore_result = conn.execute("""
+                               select count(*) as total, count(ecoscore_tags) as non_null_ecoscore
+                               from read_json_auto('s3://lemuel-de-portfolio-openfoodfacts/raw/openfoodfacts/ingest_date=*/*.json')
+                               """).df()
+
+print(ecoscore_result)
+
 
