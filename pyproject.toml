@@ -3,7 +3,7 @@ name = "data-pipeline-portfolio"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.43.68",
     "duckdb>=1.5.5",
@@ -31,3 +31,6 @@ packages = ["src/pipeline"]
 
 [project.scripts]
 ingest = "pipeline.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

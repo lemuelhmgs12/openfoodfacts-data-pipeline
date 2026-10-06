@@ -17,3 +17,7 @@ wheels/
 
 # local test
 practice*
+
+# airflow
+airflow/logs/
+airflow/.env
