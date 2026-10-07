@@ -7,24 +7,43 @@ Retailers and product-catalog teams need visibility into how their product data 
 - API: Open Food Facts (world.openfoodfacts.org)
 - Scope: "snacks" category
 - Access: No auth required; requires custom User-Agent header
-- Known constraints: intermittent 503s observed during development (needs retry logic)
+- Known constraints: 
+    - intermittent 503s observed during development (needs retry logic)
+    - maximum 100 products per page (larger requested sizes are silently capped)
+    - pages above 10 are refused with a 401, so at most 1,000 products are reachable per query (see section 9)
 
 ## 3. Alternatives Considered
+**Data source**
 - Best Buy API — rejected: blocked free/edu email signups
 - eBay API — rejected: developer application denied
 - Open Food Facts — selected: no signup friction, real incremental field (last_modified_t)
 
+**Transform / warehouse layer**
+- Glue/Spark + Redshift/Athena — rejected: far more infrastructure than a few thousand rows justify
+- DuckDB reading S3 directly — selected: no cluster to run, plain SQL files, reads JSON and Parquet from S3
+
+
 ## 4. Architecture
 ```mermaid
 flowchart LR
-    A[Open Food Facts API] -->|fetch new/changed products| B[Ingestion Script]
-    B -->|raw JSON| C[S3: raw zone<br/>partitioned by ingest_date]
-    B -->|read/update| D[S3: watermark.json<br/>last_modified_t]
-    C --> E[DuckDB: queries S3 directly<br/>no separate warehouse service]
-    E --> F[Staging: dedupe_products.sql<br/>one row per product]
-    F --> G[Marts: rollups, e.g.<br/>products_by_ingest_date.sql]
-    G --> H[Future: formalize as dbt models]
-    H --> I[Future: Dashboard]
+    A[Open Food Facts API]
+
+    subgraph AF["Airflow DAG: openfoodfacts_pipeline (daily)"]
+        direction LR
+        B[ingest] --> E[dedupe<br/>DuckDB] --> G[rollup<br/>DuckDB]
+    end
+
+    A -->|incremental fetch| B
+    B -->|raw JSON| C[(S3 raw/<br/>ingest_date=...)]
+    B <-->|read/update| D[(S3 state/<br/>watermark.json)]
+    C --> E
+    E -->|Parquet| F[(S3 staged/<br/>products_deduped)]
+    F --> G
+    G -.-> H[(Future: S3 marts/<br/>daily rollup)]
+    H -.-> I[Future: dashboard]
+
+    classDef future stroke-dasharray: 5 5,fill:#f5f5f5,color:#666
+    class H,I future
 ```
 
 **Note on this diagram's evolution**: originally planned as
@@ -33,16 +52,29 @@ stack. In practice, DuckDB querying S3 directly replaced the separate
 transform-layer + warehouse-service split entirely -- no Spark cluster
 or managed warehouse needed at this data volume, and DuckDB's native
 S3 support meant no ETL step to load data into a warehouse before
-querying it. dbt remains a real future step, but would run directly
-against DuckDB rather than against Redshift/Athena.
+querying it. dbt is deferred: two models don't justify the extra
+tooling, but if it is adopted later it would run directly against
+DuckDB rather than against Redshift/Athena.
+
+**How the pieces fit**: Airflow moves control; S3 holds the data. Each
+task runs as its own process (possibly on a different worker), so tasks
+never share memory. They hand off through S3, and Airflow passes only
+small values such as the staged file path.
+ 
+The `rollup` task currently logs its result. Persisting it to a marts
+layer in S3 is the next step and is what the dashboard will read.
 
 ## 5. Incremental Strategy
 - Watermark on `last_modified_t`, stored as JSON in S3 (s3://bucket/state/watermark.json)
-- Each run: fetch records where last_modified_t > watermark
-- Watermark updated only after successful write (avoid data loss on partial failure)
+- Results are requested newest-first, so paging stops once a product at or older than the watermark is reached
+- The boundary comparison is `>=`: products exactly at the watermark are fetched again. The raw zone is therefore at-least-once, and duplicates are removed downstream by the dedupe step
+- Watermark updated only after successful write of every batch (avoid data loss on partial failure)
+- Limitation: because of the 10-page ceiling, a run can reach at most 1,000 products. If more than that changed since the last watermark, older changes are not fetched (see sections 8 and 9)
 
 ## 6. Storage Layout
-s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_NNN.json
+- Raw: s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_{run_time}_{count}.json (the run time in the name keeps separate runs on the same day from overwriting each other)
+- State: s3://bucket/state/watermark.json
+- Staged: s3://bucket/staged/openfoodfacts/products_deduped.parquet — one row per product, written to a fixed key so reruns overwrite instead of accumulate
 
 ## 7. Error Handling
 - Retry with exponential backoff on 503 (tenacity, max 3 attempts)
@@ -56,15 +88,16 @@ s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_NNN.json
   SNS topic + email/Slack, or a simple webhook). Tracked in section 8.
 
 ## 8. Open Questions / Future Work
-- Pagination limit per run (287K total products — need a sane cap)
+- Warn (or fail) when the page cap ends a run before the watermark is reached, so a gap is visible instead of silent
+- Investigate whether the API supports filtering by modification time, which would allow walking forward in slices small enough to fit the 1,000-result limit
+- Persist the rollup to S3 (marts layer) and build a dashboard on it
 - Terraform for infra-as-code?
 - Monitoring/alerting approach
 - Alerting mechanism for failed runs (SNS? Slack webhook?) — decision
   made in section 7, implementation still pending
-- Investigate the 401 observed mid-retry: reproduce under rapid manual
-  requests (curl/Postman in quick succession) to test whether it's
-  rate-limiting-related; consider whether 401 should be added to the
-  retryable set if confirmed
+- Production credentials: use IAM roles (task role or IRSA) instead of the `~/.aws` mount used for local development
+- Resolved: the "pagination limit per run" question — capped at 10 pages, the most the API serves (see section 9)
+- Resolved (likely): the earlier mid-retry 401 — probably the same page-number ceiling, since the later Airflow failures were reproducible 401s at page 11. 
 
 
 ## 9. Findings Log
@@ -116,3 +149,30 @@ s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_NNN.json
   watermark correctly early-stops after a single page, confirming the
   incremental strategy's efficiency payoff in practice, not just in
   design.
+
+  - **Page-number ceiling (401)**: runs under Airflow kept failing after
+  page 10 with a 401, even though the 503s on earlier pages were
+  recovering through retries. Direct requests showed page 11 returns 401
+  at `page_size=100` and also at `page_size=20` (only 220 products in),
+  so the limit is on page number, not result count. At 100 products per
+  page the most reachable is 1,000 products per query. Decision: cap
+  `max_page_per_run` at 10 and accept the gap for now, with a warning
+  still to be added (section 8).
+- **Idempotent staging**: the staged Parquet is written to a fixed key
+  and rebuilt in full from raw, so an Airflow retry produces the same
+  file. Verified: staged row count matched the count of distinct product
+  codes in raw.
+- **UTC for daily rollups**: the same data gave different daily counts
+  depending on whether dates were cut in local time or UTC, because
+  `to_timestamp(...)::DATE` uses the session time zone (Los Angeles
+  locally, UTC in the container). Rollups convert explicitly to UTC so
+  results do not depend on where the query runs.
+- **Image vs DAG file**: the pipeline package is baked into the Airflow
+  image, so changes under `src/` need `docker compose build` and
+  `up -d`. The DAG file is mounted, so DAG changes apply within about
+  30 seconds.
+- **Containers have no access to host credentials**: local development
+  mounts `~/.aws` read-only and passes `S3_BUCKET` through the ignored
+  `airflow/.env`. This is for local use only; production would use an
+  IAM role.
+ 
