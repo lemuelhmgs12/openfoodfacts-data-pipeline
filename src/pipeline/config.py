@@ -13,6 +13,7 @@ class Settings:
     max_page_per_run: int = 50
     max_retry_attempts: int = 5
     raw_prefix: str="raw/openfoodfacts"
+    staged_prefix: str = "staged/openfoodfacts"
     watermark_key: str="state/watermark.json"
     s3_bucket: str = os.environ.get("S3_BUCKET")
     batch_size: int = 300
