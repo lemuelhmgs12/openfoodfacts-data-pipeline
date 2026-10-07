@@ -1,5 +1,8 @@
 # OpenFoodFacts Incremental Data Pipeline
 
+[![CI](https://github.com/lemuelhmgs12/openfoodfacts-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/lemuelhmgs12/openfoodfacts-data-pipeline/actions/workflows/ci.yml)
+
+
 An incremental data pipeline that ingests snack product data from the [Open Food Facts](https://world.openfoodfacts.org) API into S3, deduplicates it with DuckDB, and rolls it up into a daily summary. The flow is orchestrated by Airflow and runs locally with Docker Compose.
 
 ![Airflow DAG graph showing ingest, dedupe and rollup tasks succeeding](docs/images/dag_graph.png)
@@ -112,10 +115,14 @@ uv run pytest
 
 The tests cover the API client (retries, status handling), the watermark logic, storage writes, and the orchestrator, using mocked HTTP and a fake S3 client. No network or AWS access is needed.
 
+The same command runs in CI (GitHub Actions) on every push to `main` and on every pull request.
+
 ## Project layout
 
 ```
 .
+├── .github/workflows/
+│   └── ci.yml             # installs dependencies and runs the tests
 ├── src/pipeline/
 │   ├── config.py          # Settings dataclass
 │   ├── api_client.py      # Open Food Facts client with retries
@@ -143,4 +150,4 @@ The tests cover the API client (retries, status handling), the watermark logic, 
 - **Fail loudly.** If retries are exhausted the run fails, the watermark does not advance, and it is safe to rerun.
 - **Idempotent staging.** The staged Parquet is rebuilt in full from raw and written to a fixed key, so retries produce the same file.
 - **UTC dates.** Daily rollups are cut in UTC so results do not depend on where the query runs.
-- **Not built yet.** The rollup currently logs its result. Persisting it to S3 and building a dashboard on top are next. Alerting on failed runs is also still to do.
+- **Not built yet.** The rollup currently logs its result. Persisting it to S3 and building a dashboard on top are next. Alerting on failed runs and CD (automatic deployment) are also still to do.
