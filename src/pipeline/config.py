@@ -10,7 +10,7 @@ class Settings:
     category: str = "snacks"
     page_size: int= 100
     user_agent: str = "DataEngPortfolioProject/1.0 (contact: lemuelhmgs@yahoo.com)"
-    max_page_per_run: int = 50
+    max_page_per_run: int = 10 # reducded this to fix 401 from API after 10 pages
     max_retry_attempts: int = 5
     raw_prefix: str="raw/openfoodfacts"
     staged_prefix: str = "staged/openfoodfacts"

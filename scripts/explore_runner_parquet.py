@@ -14,5 +14,7 @@ run_query(conn, f"stage_deduped_products.sql", s3_path=s3_path, staged_path=stag
 
 val = conn.execute(f"select count(*) from read_parquet('{staged_path}')").fetchone()
 res = conn.execute(f"select count(distinct code) from read_json_auto('{s3_path}')").df()
-print(res)
+
+rollup =run_query(conn,f"rollup_products.sql", staged_path=staged_path)
+print(rollup)
 
