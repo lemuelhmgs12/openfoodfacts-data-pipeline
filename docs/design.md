@@ -39,7 +39,7 @@ flowchart LR
     C --> E
     E -->|Parquet| F[(S3 staged/<br/>products_deduped)]
     F --> G
-    G -.-> H[(Future: S3 marts/<br/>daily rollup)]
+    G -->|Parquet| H[(S3 marts/<br/>products_modified_daily)]
     H -.-> I[Future: dashboard]
 
     classDef future stroke-dasharray: 5 5,fill:#f5f5f5,color:#666
@@ -61,8 +61,10 @@ task runs as its own process (possibly on a different worker), so tasks
 never share memory. They hand off through S3, and Airflow passes only
 small values such as the staged file path.
  
-The `rollup` task currently logs its result. Persisting it to a marts
-layer in S3 is the next step and is what the dashboard will read.
+The `rollup` task reads the staged Parquet, counts products modified per
+day (UTC), and writes the result to a marts layer in S3. It also logs
+the result of the write and returns the marts path. The marts file is
+what a future dashboard would read.
 
 ## 5. Incremental Strategy
 - Watermark on `last_modified_t`, stored as JSON in S3 (s3://bucket/state/watermark.json)
@@ -75,6 +77,7 @@ layer in S3 is the next step and is what the dashboard will read.
 - Raw: s3://bucket/raw/openfoodfacts/ingest_date=YYYY-MM-DD/batch_{run_time}_{count}.json (the run time in the name keeps separate runs on the same day from overwriting each other)
 - State: s3://bucket/state/watermark.json
 - Staged: s3://bucket/staged/openfoodfacts/products_deduped.parquet — one row per product, written to a fixed key so reruns overwrite instead of accumulate
+- Marts: s3://bucket/marts/openfoodfacts/products_modified_daily.parquet — one row per UTC day with the number of products modified that day, rebuilt in full from staged on every run and written to a fixed key
 
 ## 7. Error Handling
 - Retry with exponential backoff on 503 (tenacity, max 3 attempts)

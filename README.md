@@ -33,7 +33,7 @@ flowchart LR
     C --> E
     E -->|Parquet| F[(S3 staged/<br/>products_deduped)]
     F --> G
-    G -.-> H[(Future: S3 marts/<br/>daily rollup)]
+    G -->|Parquet| H[(S3 marts/<br/>products_modified_daily)]
     H -.-> I[Future: dashboard]
 
     classDef future stroke-dasharray: 5 5,fill:#f5f5f5,color:#666
@@ -148,6 +148,6 @@ The same command runs in CI (GitHub Actions) on every push to `main` and on ever
 
 - **Incremental by watermark.** Results are fetched newest-first and paging stops at the previous watermark. The boundary is inclusive, so the raw zone is at-least-once and the dedupe step removes repeats.
 - **Fail loudly.** If retries are exhausted the run fails, the watermark does not advance, and it is safe to rerun.
-- **Idempotent staging.** The staged Parquet is rebuilt in full from raw and written to a fixed key, so retries produce the same file.
+- **Idempotent staging and marts** The staged Parquet is rebuilt in full from raw, and the marts file is rebuilt in full from staged. Both are written to fixed keys, so retries overwrite instead of accumulating.
 - **UTC dates.** Daily rollups are cut in UTC so results do not depend on where the query runs.
-- **Not built yet.** The rollup currently logs its result. Persisting it to S3 and building a dashboard on top are next. Alerting on failed runs and CD (automatic deployment) are also still to do.
+- **Not built yet.** A dashboard on top of the marts file is next. Alerting on failed runs and CD (automatic deployment) are also still to do.
