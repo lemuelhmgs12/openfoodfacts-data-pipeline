@@ -37,6 +37,7 @@ def openfoodfacts_pipeline():
         settings = Settings()
         s3_path = f"s3://{settings.s3_bucket}/{settings.raw_prefix}/ingest_date=*/*.json"
         staged_path = f"s3://{settings.s3_bucket}/{settings.staged_prefix}/products_deduped.parquet"
+        
 
         runner.run_query(conn, "stage_deduped_products.sql", s3_path=s3_path, staged_path=staged_path)
         conn.close()
@@ -45,13 +46,20 @@ def openfoodfacts_pipeline():
 
     @task
     def rollup(staged_path):
+        from pipeline.config import Settings
         from pipeline.sql import runner
         from pipeline.sql.connection import get_connection
 
+        
         conn = get_connection()
-        result = runner.run_query(conn, "rollup_products.sql", staged_path=staged_path)
+        settings = Settings()
+
+        mart_path = f"s3://{settings.s3_bucket}/{settings.mart_prefix}/products_modified_daily.parquet"
+
+        result = runner.run_query(conn, "rollup_products.sql", staged_path=staged_path, mart_path=mart_path)
         print(result)           
         conn.close()
+        return mart_path
         
 
     ingested = ingest()

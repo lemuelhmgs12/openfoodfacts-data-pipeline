@@ -14,6 +14,7 @@ class Settings:
     max_retry_attempts: int = 5
     raw_prefix: str="raw/openfoodfacts"
     staged_prefix: str = "staged/openfoodfacts"
+    mart_prefix: str = "marts/openfoodfacts"
     watermark_key: str="state/watermark.json"
     s3_bucket: str = os.environ.get("S3_BUCKET")
     batch_size: int = 300
