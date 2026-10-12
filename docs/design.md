@@ -11,6 +11,8 @@ Retailers and product-catalog teams need visibility into how their product data 
     - intermittent 503s observed during development (needs retry logic)
     - maximum 100 products per page (larger requested sizes are silently capped)
     - pages above 10 are refused with a 401, so at most 1,000 products are reachable per query (see section 9)
+    - documented rate limit of 10 search requests per minute per IP address, plus global limits that return 503 when exceeded
+    - the API documentation directs anyone needing more than a few hundred products to the bulk exports (CSV/JSONL, daily delta files) instead of the search API (see sections 9 and 10)
 
 ## 3. Alternatives Considered
 **Data source**
@@ -43,7 +45,7 @@ flowchart LR
     H -.-> I[Future: dashboard]
 
     classDef future stroke-dasharray: 5 5,fill:#f5f5f5,color:#666
-    class H,I future
+    class I future
 ```
 
 **Note on this diagram's evolution**: originally planned as
@@ -93,7 +95,8 @@ what a future dashboard would read.
 ## 8. Open Questions / Future Work
 - Warn (or fail) when the page cap ends a run before the watermark is reached, so a gap is visible instead of silent
 - Investigate whether the API supports filtering by modification time, which would allow walking forward in slices small enough to fit the 1,000-result limit
-- Persist the rollup to S3 (marts layer) and build a dashboard on it
+- Build a dashboard on the marts layer
+- CD: build and push the image on merge, once there is a deploy target (CI already runs the tests on every push and pull request)
 - Terraform for infra-as-code?
 - Monitoring/alerting approach
 - Alerting mechanism for failed runs (SNS? Slack webhook?) — decision
@@ -153,7 +156,7 @@ what a future dashboard would read.
   incremental strategy's efficiency payoff in practice, not just in
   design.
 
-  - **Page-number ceiling (401)**: runs under Airflow kept failing after
+- **Page-number ceiling (401)**: runs under Airflow kept failing after
   page 10 with a 401, even though the 503s on earlier pages were
   recovering through retries. Direct requests showed page 11 returns 401
   at `page_size=100` and also at `page_size=20` (only 220 products in),
@@ -178,4 +181,74 @@ what a future dashboard would read.
   mounts `~/.aws` read-only and passes `S3_BUCKET` through the ignored
   `airflow/.env`. This is for local use only; production would use an
   IAM role.
+- **The documentation steers bulk use away from the search API, and the
+  delta files fit the pipeline (checked 2026-10-11)**: the API docs set
+  a limit of 10 search requests per minute per IP, apply global limits
+  that return 503, and say anyone needing more than a few hundred
+  products should use the data exports. The data page lists daily delta
+  files covering the previous 14 days, indexed at
+  `static.openfoodfacts.org/data/delta/index.txt`. One file was inspected
+  (`openfoodfacts_products_1791613749_1791700013.json.gz`):
+    - file names carry the start and end Unix timestamps of the window,
+      and consecutive files chain (the end of one equals the start of
+      the next), so the end timestamp can serve as the watermark and a
+      broken chain reveals a gap
+    - about 24 MB compressed and 5,641 products (one JSON object per
+      line) for the day, all categories. DuckDB reads the gzip file
+      directly.
+    - the fields the pipeline uses are present: `code` (string),
+      `last_modified_t` (bigint), `categories_tags` (list of strings)
+    - 570 of the 5,641 products (about 10%) carry the `en:snacks` tag
+    - minimum and maximum `last_modified_t` (1791613778 and 1791699995)
+      fall inside the window in the file name
+    - 5,641 rows and 5,641 distinct codes, so no duplicates within a
+      file. The same product can still appear in two different days'
+      files, so cross-file dedupe remains necessary.
+  This is a single day and one sample, so volumes are indicative, not a
+  guarantee. On that day the snack volume (570) was below the search
+  API's 1,000-product ceiling, which means the gap in section 5 matters
+  after downtime or a paused DAG (more than about a day and a half of
+  accumulated changes), not on an ordinary daily run.
  
+ ## 10. Planned Migration: Daily Delta Files
+**Status: decided, not built.** Deferred to be implemented in the future, and recorded here so the reasoning is not lost. The
+pipeline works as described in sections 4 to 6 until this is done.
+ 
+**Why.** The search API is documented as unsuitable for bulk use, caps a
+run at 1,000 products, and its rate limits may explain part of the 503s.
+The delta files provide the same information as a time-ordered stream of
+changes with no paging ceiling, and a DAG that is down for several days
+catches up by reading several files in order, as long as it returns
+within the 14-day retention.
+ 
+```mermaid
+flowchart LR
+    X[Delta index + files<br/>static.openfoodfacts.org]
+ 
+    subgraph AF["Airflow DAG: openfoodfacts_pipeline (daily)"]
+        direction LR
+        B[ingest<br/>new delta files] --> E[dedupe<br/>DuckDB, snacks filter] --> G[rollup<br/>DuckDB]
+    end
+ 
+    X -->|files after watermark| B
+    B -->|raw .json.gz| C[(S3 raw/)]
+    B <-->|last file end timestamp| D[(S3 state/<br/>watermark.json)]
+    C --> E
+    E -->|Parquet| F[(S3 staged/)]
+    F --> G
+    G -->|Parquet| H[(S3 marts/)]
+```
+ 
+**Design.**
+- **Watermark** becomes the end timestamp of the last delta file fully written to raw. The next run takes the files whose start timestamp is at or after it. It still advances only after every selected file is written.
+- **Ingest** reads the index, selects the next files, downloads each one with a simple retry, and writes it to the raw zone unchanged. The search-paging client is no longer on the main path.
+- **Gap check**: if the first selected file does not start at the watermark, or consecutive files do not chain, fail loudly. A run must also fail or alert well before the 14-day retention is reached.
+- **Dedupe** reads the raw delta files, keeps rows with `en:snacks` in `categories_tags`, selects the columns in use, and keeps the latest row per `code` with the same deterministic tie-break. The staged, marts and rollup layers do not change.
+- **First run**: clear raw, staged, marts and state and rebuild from the deltas currently available (about 14 days). Mixing the old API-shaped raw files with delta files would force the dedupe query to handle two formats. The cleared data is a public source and can be regenerated.
+
+**Known limits.**
+- Deltas cover 14 days. Longer outages need the full dump to catch up.
+- Deleted products are not identifiable in deltas. Only the full dump shows deletions, so a periodic full reconcile is future work.
+- Volumes come from one day's file (section 9).
+ 
+**Effort.** Estimated 10 to 12 hours for the full version (about 6 to 7 for a minimal one without gap detection and with fewer tests), including the README, and diagram.
