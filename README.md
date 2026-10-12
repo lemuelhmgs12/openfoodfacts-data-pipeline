@@ -37,7 +37,7 @@ flowchart LR
     H -.-> I[Future: dashboard]
 
     classDef future stroke-dasharray: 5 5,fill:#f5f5f5,color:#666
-    class H,I future
+    class I future
 ```
 
 Dashed boxes are planned, not built. The full reasoning, including alternatives considered and findings from live runs, is in [design document](docs/design.md).
