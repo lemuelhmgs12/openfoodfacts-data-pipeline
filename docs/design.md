@@ -82,7 +82,7 @@ what a future dashboard would read.
 - Marts: s3://bucket/marts/openfoodfacts/products_modified_daily.parquet — one row per UTC day with the number of products modified that day, rebuilt in full from staged on every run and written to a fixed key
 
 ## 7. Error Handling
-- Retry with exponential backoff on 503 (tenacity, max 3 attempts)
+- Retry with exponential backoff on 503 (tenacity, max 5 attempts)
 - **503 failure rate measured empirically at ~60%** (see Findings Log) —
   high enough that retry is load-bearing, not a nice-to-have
 - **Retry-exhaustion behavior**: fail the run loudly (non-zero exit,
