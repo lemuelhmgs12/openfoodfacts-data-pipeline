@@ -2,6 +2,9 @@ import pytest
 import requests,responses
 from pipeline.config import Settings
 from pipeline.api_client import OpenFoodFactsClient,TransientAPIError,OpenFoodFactsError
+import logging
+
+logger = logging.getLogger(__name__)
 
 URL = f"{Settings.base_url}/api/v2/search"
 
@@ -114,3 +117,39 @@ def test_iter_products_stops_at_watermark(client, mocker):
     assert [p['code'] for p in result] == ['111','222','333']
 
     assert mock_fetch.call_count == 2
+
+
+def test_warns_when_page_cap_hit(settings, mocker, caplog):   
+    mocker.patch.object(settings, "max_page_per_run" , 2)
+    mocker.patch.object(
+        OpenFoodFactsClient, "_fetch_page",
+        return_value = {"products" : [{"code": "111", "product_name": "Fake Chips", "last_modified_t": 500}]},
+    )
+    client = OpenFoodFactsClient(settings)
+
+    with caplog.at_level(logging.WARNING):
+        list(client.iter_products())
+
+    
+    result = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    
+    assert len(result) == 1
+    assert "2 pages" in result[0]
+
+def test_no_warns_when_watermark_reached(settings, mocker, caplog):   
+    mocker.patch.object(settings, "max_page_per_run" , 3)
+    mocker.patch.object(
+        OpenFoodFactsClient, "_fetch_page",
+        side_effect = [{"products" : [{"code": "111", "product_name": "Fake Chips", "last_modified_t": 500}]},
+                       {"products" :[]}]
+    )
+    client = OpenFoodFactsClient(settings)
+    with caplog.at_level(logging.WARNING):
+       list(client.iter_products())
+
+
+    
+    result = [r for r in caplog.records if r.levelname == "WARNING"]
+    
+    assert len(result) == 0
+    

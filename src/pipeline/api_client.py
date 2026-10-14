@@ -65,7 +65,7 @@ class OpenFoodFactsClient:
     def iter_products(self, since_epoch: int | None = None) -> Iterator[dict]:
         page = 1
         is_done = False
-        while page <= self.settings.max_page_per_run and not is_done :
+        while page <= self.settings.max_page_per_run and not is_done:
             data = self._fetch_page(page)
             products = data['products']
             logger.info(f"page {page}: got {len(products)} products")
@@ -83,4 +83,7 @@ class OpenFoodFactsClient:
                     break
                 yield product
             page+=1
+
+        if not is_done:
+            logger.warning(f"Fetched {page - 1} pages before stopping. The run hit the limit and older products may have been skipped.")
     
