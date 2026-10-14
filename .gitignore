@@ -21,3 +21,7 @@ practice*
 # airflow
 airflow/logs/
 airflow/.env
+
+# test coverage
+.coverage
+htmlcove/
