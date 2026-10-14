@@ -22,4 +22,4 @@ jobs:
         run: uv sync --locked
 
       - name: Run Unit Test
-        run: pytest --cov=src/pipeline --cov-report=term-missing --cov-fail-under=90
+        run: uv run pytest --cov=src/pipeline --cov-report=term-missing --cov-fail-under=90
