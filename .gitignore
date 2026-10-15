@@ -25,3 +25,10 @@ airflow/.env
 # test coverage
 .coverage
 htmlcove/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+crash.log
