@@ -144,6 +144,25 @@ The same command runs in CI (GitHub Actions) on every push to `main` and on ever
 └── docs/design.md         # design decisions and findings
 ```
 
+## Security and infrastructure
+
+AWS access is managed with Terraform (`infra/`) and follows least privilege.
+
+- **Pipeline role:** The pipeline runs as `off-pipeline-role`, not as an admin user. The role has one policy: `s3:ListBucket` on the bucket, and `s3:GetObject` and `s3:PutObject`. Anything else is denied.
+- **Two identities:** An admin user is used only to run Terraform. The pipeline never uses its credentials directly; it assumes the role through STS and gets temporary credentials.
+- **Local setup:** Define a profile in `~/.aws/config` with `role_arn` and `source_profile`, and set `AWS_PROFILE=off-pipeline` in the Airflow containers (`docker-compose.yml`). `~/.aws` is mounted read-only.
+- **Verify:** `aws sts get-caller-identity --profile off-pipeline` should show `assumed-role/off-pipeline-role`. `aws iam list-users --profile off-pipeline` should fail with `AccessDenied`.
+- **State and secrets:** Terraform state, `terraform.tfvars` and `.env` files are git-ignored. No credentials are stored in the repo.
+
+### Terraform
+
+    cd infra
+    terraform init
+    terraform plan
+    terraform apply
+
+Set `TF_VAR_bucket_name` (or `terraform.tfvars`) before planning. See `terraform.tfvars.example`.
+
 ## Design decisions and known limitations
 
 - **Incremental by watermark.** Results are fetched newest-first and paging stops at the previous watermark. The boundary is inclusive, so the raw zone is at-least-once and the dedupe step removes repeats.

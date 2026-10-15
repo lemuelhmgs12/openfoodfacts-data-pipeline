@@ -97,11 +97,12 @@ what a future dashboard would read.
 - Investigate whether the API supports filtering by modification time, which would allow walking forward in slices small enough to fit the 1,000-result limit
 - Build a dashboard on the marts layer
 - CD: build and push the image on merge, once there is a deploy target (CI already runs the tests on every push and pull request)
-- Terraform for infra-as-code?
+- ~~Terraform for infra-as-code?~~
 - Monitoring/alerting approach
 - Alerting mechanism for failed runs (SNS? Slack webhook?) — decision
   made in section 7, implementation still pending
-- Production credentials: use IAM roles (task role or IRSA) instead of the `~/.aws` mount used for local development
+- Resolved (local): the pipeline runs as a least-privilege IAM role (section 11)
+- Open: on a deployed host, attach the role directly (EC2 instance profile, ECS task role or IRSA) instead of using the `~/.aws` mount
 - Resolved: the "pagination limit per run" question — capped at 10 pages, the most the API serves (see section 9)
 - Resolved (likely): the earlier mid-retry 401 — probably the same page-number ceiling, since the later Airflow failures were reproducible 401s at page 11. 
 
@@ -177,10 +178,11 @@ what a future dashboard would read.
   image, so changes under `src/` need `docker compose build` and
   `up -d`. The DAG file is mounted, so DAG changes apply within about
   30 seconds.
-- **Containers have no access to host credentials**: local development
-  mounts `~/.aws` read-only and passes `S3_BUCKET` through the ignored
-  `airflow/.env`. This is for local use only; production would use an
-  IAM role.
+- **Credentials in containers**: local development mounts `~/.aws`
+  read-only and sets `AWS_PROFILE=off-pipeline`, so the containers
+  assume the least-privilege role (section 11). 
+  On a deployed host the role would be attached
+  directly.
 - **The documentation steers bulk use away from the search API, and the
   delta files fit the pipeline (checked 2026-10-11)**: the API docs set
   a limit of 10 search requests per minute per IP, apply global limits
@@ -252,3 +254,23 @@ flowchart LR
 - Volumes come from one day's file (section 9).
  
 **Effort.** Estimated 10 to 12 hours for the full version (about 6 to 7 for a minimal one without gap detection and with fewer tests), including the README, and diagram.
+
+ ## 11. Access control: least-privilege IAM role
+
+**Decision:** The pipeline assumes a dedicated IAM role, defined in Terraform, instead of using an admin user's long-lived keys.
+
+**Why:**
+- A bug or leaked credential can only affect one bucket.
+- Role credentials are temporary (STS).
+- The permissions are in code (`infra/iam.tf`), so they can be reviewed, versioned and reproduced.
+
+**Details:**
+- Policy: `ListBucket` is granted on the bucket resource. `GetObject` and `PutObject` are granted on `bucket/*`. These are different resource types, so they are separate statements.
+- Trust policy: only the admin identity that provisions the role can assume it.
+- Locally and in Docker, the role is reached through an AWS config profile (`role_arn` + `source_profile`) selected with `AWS_PROFILE`.
+
+**Trade-offs and next steps:**
+
+- The role was verified for reads (watermark) and for a denied call (`iam:ListUsers`). Writes and DuckDB's `credential_chain` access are still to be confirmed end to end, and any missing action will be added one at a time.
+- On a deployed host (EC2), the role would be attached as an instance profile, so there is no config file and no `source_profile`.
+- Not yet covered: encryption settings, bucket policies, and MFA enforcement on the admin user.
